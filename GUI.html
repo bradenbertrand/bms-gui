@@ -32,84 +32,71 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
         }
 
-        h1 {
-            font-size: 18px; 
-            margin: 0;
-            letter-spacing: 1px;
-        }
+        h1 { font-size: 18px; margin: 0; }
 
-        .header-buttons {
-            display: flex;
-            gap: 6px;
-        }
+        .header-buttons { display: flex; gap: 6px; }
 
         button {
             background-color: var(--accent);
             color: #000;
             border: none;
-            padding: 8px 12px;
+            padding: 6px 10px;
             font-weight: bold;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
             transition: 0.2s ease;
         }
-
-        button:active {
-            transform: scale(0.95);
-        }
-
-        /* Start hidden, styled for specific states */
-        #logBtn {
-            display: none; 
-        }
+        button:active { transform: scale(0.95); }
         
-        #exportBtn {
-            background-color: #444;
-            color: white;
-            display: none; 
+        #logBtn, #exportBtn, #toggleMenuBtn { display: none; }
+        #exportBtn { background-color: #444; color: white; }
+
+        /* The View Toggle Menu */
+        .controls {
+            width: 100%;
+            max-width: 400px;
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: none; /* Hidden by default */
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            box-sizing: border-box;
+            font-size: 11px;
         }
+        .controls label { display: flex; align-items: center; gap: 4px; color: var(--text-main); }
 
         .dashboard {
             width: 100%;
             max-width: 400px;
             display: grid;
             grid-template-columns: 1fr 1fr; 
-            gap: 10px;
+            gap: 8px;
         }
 
         .card {
             background-color: var(--card-bg);
-            padding: 12px;
+            padding: 10px;
             border-radius: 10px;
             text-align: center;
             border-left: 3px solid var(--accent);
+            display: block; /* Managed by JS */
         }
 
-        .card.main {
-            grid-column: span 2;
-            padding: 16px 12px;
-        }
+        .card.main { grid-column: span 2; padding: 12px; }
+        .value { font-size: 20px; font-weight: bold; margin: 4px 0; }
+        .card.main .value { font-size: 28px; }
+        .label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 
-        .value {
-            font-size: 24px; 
-            font-weight: bold;
-            margin: 4px 0;
-        }
-
-        .card.main .value {
-            font-size: 34px; 
-        }
-
-        .label {
-            font-size: 10px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
+        /* Specific accent colors for new metrics */
+        .card[data-metric="state"] { border-left-color: #ffeb3b; }
+        .card[data-metric="sag"] { border-left-color: var(--danger); }
+        .card[data-metric="odo"] { border-left-color: #9c27b0; }
     </style>
 </head>
 <body>
@@ -117,24 +104,50 @@
     <header>
         <h1>NIU<span style="color: var(--accent)">BMS</span></h1>
         <div class="header-buttons">
-            <button id="exportBtn">Download CSV</button>
-            <button id="logBtn">Start Log</button>
+            <button id="toggleMenuBtn">⚙ View</button>
+            <button id="exportBtn">DL CSV</button>
+            <button id="logBtn">Log</button>
             <button id="connectBtn">Connect</button>
         </div>
     </header>
+
+    <div class="controls" id="controlPanel">
+        <label><input type="checkbox" checked data-target="range"> Range</label>
+        <label><input type="checkbox" checked data-target="volts"> Volts</label>
+        <label><input type="checkbox" checked data-target="state"> Status</label>
+        <label><input type="checkbox" checked data-target="sag"> Max Sag</label>
+        <label><input type="checkbox" checked data-target="odo"> Odometer</label>
+        <label><input type="checkbox" checked data-target="cyc"> Cycles</label>
+    </div>
 
     <div class="dashboard">
         <div class="card main">
             <div class="label">Battery Level</div>
             <div class="value" id="capValue">--%</div>
         </div>
-        <div class="card">
+        <div class="card" data-metric="range">
             <div class="label">Est. Range</div>
             <div class="value" id="rangeValue">-- km</div>
         </div>
-        <div class="card">
+        <div class="card" data-metric="volts">
             <div class="label">Live Volts</div>
             <div class="value" id="voltValue">-- V</div>
+        </div>
+        <div class="card" data-metric="state">
+            <div class="label">System State</div>
+            <div class="value" id="stateValue">--</div>
+        </div>
+        <div class="card" data-metric="sag">
+            <div class="label">Max Sag Drop</div>
+            <div class="value" id="sagValue">-- V</div>
+        </div>
+        <div class="card" data-metric="odo">
+            <div class="label">Odometer</div>
+            <div class="value" id="odoValue">-- km</div>
+        </div>
+        <div class="card" data-metric="cyc">
+            <div class="label">Charge Cycles</div>
+            <div class="value" id="cycValue">--</div>
         </div>
     </div>
 
@@ -142,16 +155,37 @@
         const connectBtn = document.getElementById('connectBtn');
         const logBtn = document.getElementById('logBtn');
         const exportBtn = document.getElementById('exportBtn');
+        const toggleMenuBtn = document.getElementById('toggleMenuBtn');
+        const controlPanel = document.getElementById('controlPanel');
         
-        const voltValue = document.getElementById('voltValue');
-        const capValue = document.getElementById('capValue');
-        const rangeValue = document.getElementById('rangeValue');
+        // Value spans
+        const valMap = {
+            volts: document.getElementById('voltValue'),
+            cap: document.getElementById('capValue'),
+            range: document.getElementById('rangeValue'),
+            odo: document.getElementById('odoValue'),
+            cyc: document.getElementById('cycValue'),
+            state: document.getElementById('stateValue'),
+            sag: document.getElementById('sagValue')
+        };
 
         const serviceUuid = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         const characteristicUuid = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
-        let sessionData = [["Time", "Voltage (V)", "Capacity (%)", "Calculated Range (km)"]];
+        let sessionData = [["Time", "Volts", "Cap(%)", "Range(km)", "Odo(km)", "Cycles", "State", "Sag(V)"]];
         let isLogging = false;
+
+        // Toggle UI logic
+        toggleMenuBtn.addEventListener('click', () => {
+            controlPanel.style.display = controlPanel.style.display === "grid" ? "none" : "grid";
+        });
+
+        document.querySelectorAll('.controls input[type="checkbox"]').forEach(box => {
+            box.addEventListener('change', (e) => {
+                const targetCard = document.querySelector(`.card[data-metric="${e.target.dataset.target}"]`);
+                if(targetCard) targetCard.style.display = e.target.checked ? "block" : "none";
+            });
+        });
 
         connectBtn.addEventListener('click', async () => {
             try {
@@ -161,11 +195,9 @@
                 });
 
                 const server = await device.gatt.connect();
-                
-                // Update UI upon successful connection
-                connectBtn.innerText = "Connected";
-                connectBtn.style.backgroundColor = "#4caf50";
-                logBtn.style.display = "block"; // Reveal the logging button
+                connectBtn.style.display = "none";
+                logBtn.style.display = "block"; 
+                toggleMenuBtn.style.display = "block";
 
                 const service = await server.getPrimaryService(serviceUuid);
                 const characteristic = await service.getCharacteristic(characteristicUuid);
@@ -173,26 +205,21 @@
                 await characteristic.startNotifications();
                 characteristic.addEventListener('characteristicvaluechanged', handleIncomingData);
 
-            } catch (error) {
-                console.error("Connection failed!", error);
-                alert("Could not connect to the scooter.");
-            }
+            } catch (error) { console.error("Connection failed!", error); }
         });
 
-        // Toggle Logging State
         logBtn.addEventListener('click', () => {
-            isLogging = !isLogging; // Flip the boolean
-            
+            isLogging = !isLogging; 
             if (isLogging) {
                 logBtn.innerText = "Recording...";
                 logBtn.style.backgroundColor = "var(--danger)";
                 logBtn.style.color = "white";
-                exportBtn.style.display = "none"; // Hide download while actively recording
+                exportBtn.style.display = "none"; 
             } else {
-                logBtn.innerText = "Resume Log";
+                logBtn.innerText = "Log";
                 logBtn.style.backgroundColor = "var(--accent)";
                 logBtn.style.color = "black";
-                exportBtn.style.display = "block"; // Reveal download when paused/stopped
+                exportBtn.style.display = "block"; 
             }
         });
 
@@ -200,40 +227,34 @@
             const textDecoder = new TextDecoder('utf-8');
             const rawData = textDecoder.decode(event.target.value);
             
-            const regex = /Volts:\s*([\d.]+)V\s*\|\s*Cap:\s*(\d+)%\s*\|\s*Range:\s*([\d.]+)km/;
+            // Expected String: V:52.60|C:65|R:18.2|O:10.5|Y:2|S:Riding|M:1.20
+            const regex = /V:([\d.]+)\|C:(\d+)\|R:([\d.]+)\|O:([\d.]+)\|Y:(\d+)\|S:([A-Za-z]+)\|M:([\d.]+)/;
             const match = rawData.match(regex);
 
             if (match) {
-                const currentVolts = match[1];
-                const currentCap = match[2];
-                const currentRange = match[3];
+                valMap.volts.innerText = match[1] + " V";
+                valMap.cap.innerText = match[2] + "%";
+                valMap.range.innerText = match[3] + " km";
+                valMap.odo.innerText = match[4] + " km";
+                valMap.cyc.innerText = match[5];
+                valMap.state.innerText = match[6];
+                valMap.sag.innerText = match[7] + " V";
 
-                // 1. Always update the visual dashboard
-                voltValue.innerText = currentVolts + " V";
-                capValue.innerText = currentCap + "%";
-                rangeValue.innerText = currentRange + " km";
-
-                // 2. Only push to the array if the log toggle is active
                 if (isLogging) {
                     const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-                    sessionData.push([timestamp, currentVolts, currentCap, currentRange]);
+                    sessionData.push([timestamp, match[1], match[2], match[3], match[4], match[5], match[6], match[7]]);
                 }
             }
         }
 
         exportBtn.addEventListener('click', () => {
-            if (sessionData.length <= 1) {
-                alert("No data logged yet.");
-                return;
-            }
-
+            if (sessionData.length <= 1) return alert("No data logged yet.");
             let csvContent = sessionData.map(e => e.join(",")).join("\n");
             let blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             let url = URL.createObjectURL(blob);
-            
             let link = document.createElement("a");
             link.setAttribute("href", url);
-            link.setAttribute("download", "NIU_Ride_Log_" + new Date().toISOString().split('T')[0] + ".csv");
+            link.setAttribute("download", "NIU_Log_" + new Date().toISOString().split('T')[0] + ".csv");
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
