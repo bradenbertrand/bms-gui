@@ -158,7 +158,6 @@
         const toggleMenuBtn = document.getElementById('toggleMenuBtn');
         const controlPanel = document.getElementById('controlPanel');
         
-        // Value spans
         const valMap = {
             volts: document.getElementById('voltValue'),
             cap: document.getElementById('capValue'),
@@ -174,8 +173,10 @@
 
         let sessionData = [["Time", "Volts", "Cap(%)", "Range(km)", "Odo(km)", "Cycles", "State", "Sag(V)"]];
         let isLogging = false;
+        
+        // NEW: The string buffer to catch fragmented Bluetooth packets
+        let receiveBuffer = ""; 
 
-        // Toggle UI logic
         toggleMenuBtn.addEventListener('click', () => {
             controlPanel.style.display = controlPanel.style.display === "grid" ? "none" : "grid";
         });
@@ -225,24 +226,37 @@
 
         function handleIncomingData(event) {
             const textDecoder = new TextDecoder('utf-8');
-            const rawData = textDecoder.decode(event.target.value);
+            const chunk = textDecoder.decode(event.target.value);
             
-            // Expected String: V:52.60|C:65|R:18.2|O:10.5|Y:2|S:Riding|M:1.20
-            const regex = /V:([\d.]+)\|C:(\d+)\|R:([\d.]+)\|O:([\d.]+)\|Y:(\d+)\|S:([A-Za-z]+)\|M:([\d.]+)/;
-            const match = rawData.match(regex);
+            // 1. Add the incoming 20-byte chunk to our buffer
+            receiveBuffer += chunk;
+            
+            // 2. Split the buffer at every newline character
+            const lines = receiveBuffer.split('\n');
+            
+            // 3. The last item in the array is either an empty string (if it ended perfectly in \n) 
+            // or an incomplete chunk. We pop it off and leave it in the buffer for the next cycle.
+            receiveBuffer = lines.pop(); 
 
-            if (match) {
-                valMap.volts.innerText = match[1] + " V";
-                valMap.cap.innerText = match[2] + "%";
-                valMap.range.innerText = match[3] + " km";
-                valMap.odo.innerText = match[4] + " km";
-                valMap.cyc.innerText = match[5];
-                valMap.state.innerText = match[6];
-                valMap.sag.innerText = match[7] + " V";
+            // 4. Process any complete strings we found
+            for (const line of lines) {
+                // Updated Regex to allow for optional negative signs (-?) just in case
+                const regex = /V:(-?[\d.]+)\|C:(-?\d+)\|R:(-?[\d.]+)\|O:(-?[\d.]+)\|Y:(-?\d+)\|S:([A-Za-z]+)\|M:(-?[\d.]+)/;
+                const match = line.match(regex);
 
-                if (isLogging) {
-                    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
-                    sessionData.push([timestamp, match[1], match[2], match[3], match[4], match[5], match[6], match[7]]);
+                if (match) {
+                    valMap.volts.innerText = match[1] + " V";
+                    valMap.cap.innerText = match[2] + "%";
+                    valMap.range.innerText = match[3] + " km";
+                    valMap.odo.innerText = match[4] + " km";
+                    valMap.cyc.innerText = match[5];
+                    valMap.state.innerText = match[6];
+                    valMap.sag.innerText = match[7] + " V";
+
+                    if (isLogging) {
+                        const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+                        sessionData.push([timestamp, match[1], match[2], match[3], match[4], match[5], match[6], match[7]]);
+                    }
                 }
             }
         }
