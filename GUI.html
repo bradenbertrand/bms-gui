@@ -11,6 +11,7 @@
             --accent: #00ffcc;
             --text-main: #ffffff;
             --text-muted: #888888;
+            --danger: #ff4444;
         }
         
         body {
@@ -18,10 +19,11 @@
             background-color: var(--bg-color);
             color: var(--text-main);
             margin: 0;
-            padding: 20px;
+            padding: 12px 15px; 
             display: flex;
             flex-direction: column;
             align-items: center;
+            box-sizing: border-box; 
         }
 
         header {
@@ -30,24 +32,29 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
+            margin-bottom: 12px;
         }
 
         h1 {
-            font-size: 24px;
+            font-size: 18px; 
             margin: 0;
             letter-spacing: 1px;
+        }
+
+        .header-buttons {
+            display: flex;
+            gap: 6px;
         }
 
         button {
             background-color: var(--accent);
             color: #000;
             border: none;
-            padding: 10px 20px;
+            padding: 8px 12px;
             font-weight: bold;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 12px;
             transition: 0.2s ease;
         }
 
@@ -55,33 +62,53 @@
             transform: scale(0.95);
         }
 
+        /* Start hidden, styled for specific states */
+        #logBtn {
+            display: none; 
+        }
+        
+        #exportBtn {
+            background-color: #444;
+            color: white;
+            display: none; 
+        }
+
         .dashboard {
             width: 100%;
             max-width: 400px;
             display: grid;
-            grid-template-columns: 1fr;
-            gap: 15px;
+            grid-template-columns: 1fr 1fr; 
+            gap: 10px;
         }
 
         .card {
             background-color: var(--card-bg);
-            padding: 25px;
-            border-radius: 12px;
+            padding: 12px;
+            border-radius: 10px;
             text-align: center;
-            border-left: 4px solid var(--accent);
+            border-left: 3px solid var(--accent);
+        }
+
+        .card.main {
+            grid-column: span 2;
+            padding: 16px 12px;
         }
 
         .value {
-            font-size: 48px;
+            font-size: 24px; 
             font-weight: bold;
-            margin: 10px 0;
+            margin: 4px 0;
+        }
+
+        .card.main .value {
+            font-size: 34px; 
         }
 
         .label {
-            font-size: 14px;
+            font-size: 10px;
             color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
         }
     </style>
 </head>
@@ -89,79 +116,128 @@
 
     <header>
         <h1>NIU<span style="color: var(--accent)">BMS</span></h1>
-        <button id="connectBtn">Connect</button>
+        <div class="header-buttons">
+            <button id="exportBtn">Download CSV</button>
+            <button id="logBtn">Start Log</button>
+            <button id="connectBtn">Connect</button>
+        </div>
     </header>
 
     <div class="dashboard">
-        <div class="card">
+        <div class="card main">
             <div class="label">Battery Level</div>
             <div class="value" id="capValue">--%</div>
         </div>
         <div class="card">
-            <div class="label">Estimated Range</div>
+            <div class="label">Est. Range</div>
             <div class="value" id="rangeValue">-- km</div>
         </div>
         <div class="card">
-            <div class="label">Live Voltage</div>
+            <div class="label">Live Volts</div>
             <div class="value" id="voltValue">-- V</div>
         </div>
     </div>
 
     <script>
         const connectBtn = document.getElementById('connectBtn');
+        const logBtn = document.getElementById('logBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        
         const voltValue = document.getElementById('voltValue');
         const capValue = document.getElementById('capValue');
         const rangeValue = document.getElementById('rangeValue');
 
-        // The UUIDs from your ESP32 C++ Code
         const serviceUuid = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         const characteristicUuid = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 
+        let sessionData = [["Time", "Voltage (V)", "Capacity (%)", "Calculated Range (km)"]];
+        let isLogging = false;
+
         connectBtn.addEventListener('click', async () => {
             try {
-                // 1. Request connection to the specific device name
-                console.log('Requesting Bluetooth Device...');
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ name: 'NIU_Custom_BMS' }],
                     optionalServices: [serviceUuid]
                 });
 
-                // 2. Connect to the GATT server
                 const server = await device.gatt.connect();
+                
+                // Update UI upon successful connection
                 connectBtn.innerText = "Connected";
                 connectBtn.style.backgroundColor = "#4caf50";
+                logBtn.style.display = "block"; // Reveal the logging button
 
-                // 3. Get the service and characteristic
                 const service = await server.getPrimaryService(serviceUuid);
                 const characteristic = await service.getCharacteristic(characteristicUuid);
 
-                // 4. Start listening for the continuous stream of data
                 await characteristic.startNotifications();
                 characteristic.addEventListener('characteristicvaluechanged', handleIncomingData);
 
             } catch (error) {
                 console.error("Connection failed!", error);
-                alert("Could not connect to the scooter. Make sure Bluetooth is on and the ESP32 is powered.");
+                alert("Could not connect to the scooter.");
+            }
+        });
+
+        // Toggle Logging State
+        logBtn.addEventListener('click', () => {
+            isLogging = !isLogging; // Flip the boolean
+            
+            if (isLogging) {
+                logBtn.innerText = "Recording...";
+                logBtn.style.backgroundColor = "var(--danger)";
+                logBtn.style.color = "white";
+                exportBtn.style.display = "none"; // Hide download while actively recording
+            } else {
+                logBtn.innerText = "Resume Log";
+                logBtn.style.backgroundColor = "var(--accent)";
+                logBtn.style.color = "black";
+                exportBtn.style.display = "block"; // Reveal download when paused/stopped
             }
         });
 
         function handleIncomingData(event) {
-            // Convert the raw bytes from the ESP32 back into text
             const textDecoder = new TextDecoder('utf-8');
             const rawData = textDecoder.decode(event.target.value);
             
-            // The incoming string looks exactly like: "Volts: 52.60V | Cap: 65% | Range: 18.2km"
-            // We use a Regular Expression to mathematically extract just the numbers
             const regex = /Volts:\s*([\d.]+)V\s*\|\s*Cap:\s*(\d+)%\s*\|\s*Range:\s*([\d.]+)km/;
             const match = rawData.match(regex);
 
             if (match) {
-                // Update the HTML dashboard with the extracted data
-                voltValue.innerText = match[1] + " V";
-                capValue.innerText = match[2] + "%";
-                rangeValue.innerText = match[3] + " km";
+                const currentVolts = match[1];
+                const currentCap = match[2];
+                const currentRange = match[3];
+
+                // 1. Always update the visual dashboard
+                voltValue.innerText = currentVolts + " V";
+                capValue.innerText = currentCap + "%";
+                rangeValue.innerText = currentRange + " km";
+
+                // 2. Only push to the array if the log toggle is active
+                if (isLogging) {
+                    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+                    sessionData.push([timestamp, currentVolts, currentCap, currentRange]);
+                }
             }
         }
+
+        exportBtn.addEventListener('click', () => {
+            if (sessionData.length <= 1) {
+                alert("No data logged yet.");
+                return;
+            }
+
+            let csvContent = sessionData.map(e => e.join(",")).join("\n");
+            let blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            let url = URL.createObjectURL(blob);
+            
+            let link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "NIU_Ride_Log_" + new Date().toISOString().split('T')[0] + ".csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
     </script>
 </body>
 </html>
