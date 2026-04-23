@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIU Telemetry</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --accent: #00ffcc;
+            --text-main: #ffffff;
+            --text-muted: #888888;
+        }
+        
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin: 0;
+            letter-spacing: 1px;
+        }
+
+        button {
+            background-color: var(--accent);
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: 0.2s ease;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .dashboard {
+            width: 100%;
+            max-width: 400px;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            border-left: 4px solid var(--accent);
+        }
+
+        .value {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .label {
+            font-size: 14px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>NIU<span style="color: var(--accent)">BMS</span></h1>
+        <button id="connectBtn">Connect</button>
+    </header>
+
+    <div class="dashboard">
+        <div class="card">
+            <div class="label">Battery Level</div>
+            <div class="value" id="capValue">--%</div>
+        </div>
+        <div class="card">
+            <div class="label">Estimated Range</div>
+            <div class="value" id="rangeValue">-- km</div>
+        </div>
+        <div class="card">
+            <div class="label">Live Voltage</div>
+            <div class="value" id="voltValue">-- V</div>
+        </div>
+    </div>
+
+    <script>
+        const connectBtn = document.getElementById('connectBtn');
+        const voltValue = document.getElementById('voltValue');
+        const capValue = document.getElementById('capValue');
+        const rangeValue = document.getElementById('rangeValue');
+
+        // The UUIDs from your ESP32 C++ Code
+        const serviceUuid = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+        const characteristicUuid = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+
+        connectBtn.addEventListener('click', async () => {
+            try {
+                // 1. Request connection to the specific device name
+                console.log('Requesting Bluetooth Device...');
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'NIU_Custom_BMS' }],
+                    optionalServices: [serviceUuid]
+                });
+
+                // 2. Connect to the GATT server
+                const server = await device.gatt.connect();
+                connectBtn.innerText = "Connected";
+                connectBtn.style.backgroundColor = "#4caf50";
+
+                // 3. Get the service and characteristic
+                const service = await server.getPrimaryService(serviceUuid);
+                const characteristic = await service.getCharacteristic(characteristicUuid);
+
+                // 4. Start listening for the continuous stream of data
+                await characteristic.startNotifications();
+                characteristic.addEventListener('characteristicvaluechanged', handleIncomingData);
+
+            } catch (error) {
+                console.error("Connection failed!", error);
+                alert("Could not connect to the scooter. Make sure Bluetooth is on and the ESP32 is powered.");
+            }
+        });
+
+        function handleIncomingData(event) {
+            // Convert the raw bytes from the ESP32 back into text
+            const textDecoder = new TextDecoder('utf-8');
+            const rawData = textDecoder.decode(event.target.value);
+            
+            // The incoming string looks exactly like: "Volts: 52.60V | Cap: 65% | Range: 18.2km"
+            // We use a Regular Expression to mathematically extract just the numbers
+            const regex = /Volts:\s*([\d.]+)V\s*\|\s*Cap:\s*(\d+)%\s*\|\s*Range:\s*([\d.]+)km/;
+            const match = rawData.match(regex);
+
+            if (match) {
+                // Update the HTML dashboard with the extracted data
+                voltValue.innerText = match[1] + " V";
+                capValue.innerText = match[2] + "%";
+                rangeValue.innerText = match[3] + " km";
+            }
+        }
+    </script>
+</body>
+</html>
